@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SME Hero Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@400;600;700&display=swap">
+<style>
+  :root {
+    /* Layout: full-bleed isometric office canvas, a floating control card (bottom sheet on phones), HUD tags pinned over the agent */
+    --bg: #111116;
+    --panel: rgba(22, 22, 28, 0.9);
+    --line: rgba(255, 255, 255, 0.09);
+    --fg: #ecebf3;
+    --muted: #8e8b9b;
+    --accent: #8fd8ff;
+    --dept: #a78bfa;
+    --gold: #d8c48e;
+    --chip: #08080b;
+    --display: "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--display);
+    overflow: hidden;
+  }
+  .stage { position: fixed; inset: 0; }
+  .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+  .stage.hot canvas { cursor: pointer; }
+
+  .panel {
+    position: fixed;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: 16px;
+    width: 300px;
+    max-width: calc(100% - 32px);
+    box-sizing: border-box;
+    padding: 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .eyebrow {
+    margin: 0;
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    color: var(--gold);
+  }
+  h1 {
+    margin: 0;
+    font-size: 26px;
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .intro { display: flex; flex-direction: column; gap: 8px; }
+  .lede { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .label {
+    font: 500 10.5px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .seg button, .toggle {
+    font: 500 13px/1.2 var(--display);
+    color: var(--fg);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .seg button { padding: 9px 10px; text-align: left; }
+  .seg button:hover, .toggle:hover { background: rgba(255, 255, 255, 0.08); }
+  .seg button[aria-checked="true"] {
+    background: rgba(143, 216, 255, 0.12);
+    border-color: rgba(143, 216, 255, 0.55);
+    color: var(--accent);
+  }
+  .seg button:focus-visible, .toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .toggles { display: flex; flex-direction: column; gap: 6px; }
+  .toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .track {
+    flex: none;
+    width: 30px;
+    height: 16px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.14);
+    position: relative;
+    transition: background 0.2s;
+  }
+  .track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--fg);
+    transition: transform 0.2s;
+  }
+  .toggle[aria-pressed="true"] .track { background: var(--accent); }
+  .toggle[aria-pressed="true"] .track::after { transform: translateX(14px); background: var(--chip); }
+  .hint {
+    margin: 0;
+    font: 400 11px/1.5 var(--mono);
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* HUD tag that follows the agent, styled after the simulator's zone card */
+  .tag {
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    will-change: transform;
+  }
+  .card {
+    background: rgba(30, 30, 36, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 14px 11px;
+    min-width: 150px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card-row { display: flex; align-items: baseline; gap: 10px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dept); align-self: center; }
+  .dept { font: 500 14px/1 var(--mono); letter-spacing: 0.06em; }
+  .count { font: 700 24px/1 var(--display); font-variant-numeric: tabular-nums; }
+  .meta { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; color: var(--muted); white-space: nowrap; }
+  .meta .on { color: var(--accent); }
+  .name {
+    display: flex;
+    gap: 8px;
+    background: var(--chip);
+    color: var(--fg);
+    font: 500 12px/1 var(--mono);
+    padding: 5px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .name .state { color: var(--muted); }
+
+  .fallback {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding-inline: 16px;
+    text-align: center;
+    color: var(--muted);
+    font: 400 14px/1.5 var(--mono);
+  }
+
+  @media (max-width: 640px) {
+    .panel {
+      top: auto;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      right: 16px;
+      width: auto;
+      padding: 14px;
+      gap: 12px;
+    }
+    h1 { font-size: 20px; }
+    .lede, .hint { display: none; }
+    .seg { grid-template-columns: repeat(4, 1fr); }
+    .seg button { padding: 9px 6px; text-align: center; font-size: 12px; }
+    .toggles { flex-direction: row; flex-wrap: wrap; }
+    .toggle { flex: 1 1 0; min-width: 0; font-size: 12px; }
+    .card { min-width: 0; padding: 8px 11px 9px; }
+    .count { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="stage" id="stage" aria-label="3D office scene with the SME Hero agent at an HR desk"></div>
+
+<div class="tag" id="tag" aria-hidden="true">
+  <div class="card">
+    <div class="card-row"><span class="dot"></span><span class="dept">HR</span></div>
+    <div class="card-row"><span class="count">1</span><span class="meta">AGENT · <span id="liveCount">0</span> LIVE</span></div>
+  </div>
+  <div class="name"><span>SME Hero</span><span class="state" id="stateTag">typing</span></div>
+</div>
+
+<aside class="panel">
+  <div class="intro">
+    <p class="eyebrow">SMEHERO.AI · OFFICE SIM</p>
+    <h1>SME Hero agent</h1>
+    <p class="lede">Your mascot rebuilt as a voxel agent for the office simulator: silver dome head, glowing ^ ^ visor, navy suit, black tie and the red folder.</p>
+  </div>
+  <div class="group">
+    <span class="label" id="activityLabel">Activity</span>
+    <div class="seg" role="radiogroup" aria-labelledby="activityLabel">
+      <button type="button" role="radio" id="st-work" data-state="work" aria-checked="true">Working</button>
+      <button type="button" role="radio" id="st-idle" data-state="idle" aria-checked="false">Idle</button>
+      <button type="button" role="radio" id="st-walk" data-state="walk" aria-checked="false">Walking</button>
+      <button type="button" role="radio" id="st-thumbs" data-state="thumbs" aria-checked="false">Thumbs up</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="label">Options</span>
+    <div class="toggles">
+      <button type="button" class="toggle" id="opt-live" aria-pressed="false">Live session <span class="track"></span></button>
+      <button type="button" class="toggle" id="opt-folder" aria-pressed="true">Red folder <span class="track"></span></button>
+      <button type="button" class="toggle" id="opt-spin" aria-pressed="false">Turntable <span class="track"></span></button>
+    </div>
+  </div>
+  <p class="hint">Drag to orbit · scroll or pinch to zoom · tap the robot for a thumbs up</p>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="smehero-character.js"></script>
+<script>
+(function () {
+  'use strict';
+  var stage = document.getElementById('stage');
+
+  function fail(msg) {
+    var d = document.createElement('div');
+    d.className = 'fallback';
+    d.textContent = msg;
+    document.body.appendChild(d);
+    document.getElementById('tag').hidden = true;
+  }
+  if (!window.THREE || !window.SMEHero) { fail('The 3D library did not load. Check your connection and reload the page.'); return; }
+
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch (e) {
+    fail('This browser cannot show 3D graphics (WebGL is turned off).');
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111116);
+
+  var camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  camera.position.set(7, 6.2, 7);
+
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.9, 0.1);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.minZoom = 0.6;
+  controls.maxZoom = 2.6;
+  controls.maxPolarAngle = 1.32;
+  controls.autoRotateSpeed = 1.2;
+  controls.update();
+
+  // Lights
+  scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x2a2430, 0.75));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  var sun = new THREE.DirectionalLight(0xfff4e6, 0.9);
+  sun.position.set(4, 8, 3);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  var sc = sun.shadow.camera;
+  sc.left = -6; sc.right = 6; sc.top = 6; sc.bottom = -6; sc.near = 1; sc.far = 25;
+  sun.shadow.bias = -0.0005;
+  scene.add(sun);
+  var fill = new THREE.DirectionalLight(0x8fb4ff, 0.25);
+  fill.position.set(-5, 3, -2);
+  scene.add(fill);
+
+  // Helpers
+  var geoCache = {};
+  function mat(color, rough) {
+    return new THREE.MeshStandardMaterial({ color: color, roughness: rough == null ? 0.85 : rough, flatShading: true });
+  }
+  function box(parent, w, h, d, material, x, y, z) {
+    var key = w + '|' + h + '|' + d;
+    var g = geoCache[key] || (geoCache[key] = new THREE.BoxGeometry(w, h, d));
+    var m = new THREE.Mesh(g, material);
+    m.position.set(x || 0, y || 0, z || 0);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  }
+  function canvasTexture(w, h, draw) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    tex.redraw = function () { draw(c.getContext('2d'), w, h); tex.needsUpdate = true; };
+    tex.redraw();
+    return tex;
+  }
+
+  // Ground and zone floor
+  var ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), mat(0x15151b, 1));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.081;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  var grid = new THREE.GridHelper(60, 60, 0x262630, 0x1f1f27);
+  grid.position.y = -0.079;
+  scene.add(grid);
+
+  var floorMat = mat(0x675c6b, 0.95);
+  box(scene, 5, 0.08, 5, floorMat, 0, -0.04, 0);
+  box(scene, 2.6, 0.012, 2.1, mat(0x5b5161, 1), 0, 0.006, 0.3);
+
+  // Walls on the two far sides, with tan floor lights like the simulator's partitions
+  var wallMat = mat(0x34343d, 0.9), capMat = mat(0x4a4a55, 0.8), tanMat = mat(0xc8b27a, 0.6);
+  box(scene, 5.12, 1.3, 0.12, wallMat, -0.06, 0.65, -2.56);
+  box(scene, 0.12, 1.3, 5.0, wallMat, -2.56, 0.65, 0);
+  box(scene, 5.24, 0.06, 0.18, capMat, -0.06, 1.33, -2.56);
+  box(scene, 0.18, 0.06, 5.0, capMat, -2.56, 1.33, 0);
+  for (var i = -2.2; i <= 2.21; i += 0.4) {
+    box(scene, 0.12, 0.05, 0.02, tanMat, i, 0.12, -2.495);
+    box(scene, 0.02, 0.05, 0.12, tanMat, -2.495, 0.12, i);
+  }
+
+  // Wall sign
+  var signTex = canvasTexture(1024, 256, function (ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#d8c48e';
+    ctx.font = '700 120px Sora, system-ui, sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('SMEHERO', 24, 140);
+    ctx.fillStyle = '#9a96a8';
+    ctx.font = '500 40px "DM Mono", ui-monospace, monospace';
+    ctx.fillText('PEOPLE & CULTURE  ·  KUALA LUMPUR', 30, 215);
+  });
+  var sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65),
+    new THREE.MeshBasicMaterial({ map: signTex, transparent: true }));
+  sign.position.set(-0.4, 0.82, -2.497);
+  scene.add(sign);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(signTex.redraw);
+
+  // Desk, laptop and desk clutter
+  var deskTop = mat(0xc9b48a, 0.7), deskSide = mat(0xad9870, 0.8);
+  box(scene, 1.3, 0.05, 0.72, deskTop, 0, 0.715, 0.6);
+  box(scene, 0.05, 0.69, 0.66, deskSide, -0.62, 0.345, 0.6);
+  box(scene, 0.05, 0.69, 0.66, deskSide, 0.62, 0.345, 0.6);
+  box(scene, 1.19, 0.38, 0.03, deskSide, 0, 0.5, 0.92);
+
+  var laptopMat = mat(0x2b2d33, 0.5);
+  box(scene, 0.46, 0.025, 0.32, laptopMat, 0, 0.7525, 0.55);
+  box(scene, 0.4, 0.006, 0.14, mat(0x3a3d45, 0.6), 0, 0.767, 0.5);
+  var hinge = new THREE.Group();
+  hinge.position.set(0, 0.765, 0.71);
+  hinge.rotation.x = 0.25;
+  scene.add(hinge);
+  box(hinge, 0.46, 0.3, 0.02, laptopMat, 0, 0.15, 0);
+  var screenTex = canvasTexture(256, 256, function (ctx, w, h) {
+    ctx.fillStyle = '#0d1530';
+    ctx.fillRect(0, 0, w, h);
+    var rows = [[0.7, 1], [0.45, 0], [0.8, 1], [0.6, 0], [0.35, 1], [0.75, 0], [0.5, 1], [0.65, 0]];
+    rows.forEach(function (r, n) {
+      var y = 10 + n * 31;
+      var bw = r[0] * (w - 40);
+      ctx.fillStyle = r[1] ? '#8fd8ff' : '#33467a';
+      ctx.fillRect(r[1] ? 14 : w - 14 - bw, y, bw, 18);
+    });
+  });
+  screenTex.wrapT = THREE.RepeatWrapping;
+  screenTex.repeat.set(1, 0.6);
+  var screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
+  var screen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.26), screenMat);
+  screen.rotation.y = Math.PI;
+  screen.position.set(0, 0.15, -0.0115);
+  hinge.add(screen);
+
+  box(scene, 0.09, 0.11, 0.09, mat(0xeeeeee, 0.6), 0.47, 0.795, 0.48);
+  box(scene, 0.03, 0.06, 0.02, mat(0xeeeeee, 0.6), 0.53, 0.8, 0.48);
+  box(scene, 0.26, 0.04, 0.34, mat(0xf2efe6, 0.95), -0.43, 0.76, 0.62).rotation.y = 0.15;
+  // The folder rests here while the agent types, and goes back in its hand when it gets up
+  var deskFolder = box(scene, 0.24, 0.02, 0.32, mat(0x7d2128, 0.7), -0.43, 0.79, 0.6);
+  deskFolder.rotation.y = -0.1;
+
+  // Office chair
+  var chair = new THREE.Group();
+  chair.position.set(0, 0, 0.02);
+  scene.add(chair);
+  var chairMat = mat(0x3b3d46, 0.7), chairDark = mat(0x23242a, 0.6);
+  box(chair, 0.5, 0.07, 0.48, chairMat, 0, 0.385, 0);
+  box(chair, 0.5, 0.56, 0.07, chairMat, 0, 0.74, -0.3).rotation.x = -0.08;
+  box(chair, 0.08, 0.2, 0.08, chairDark, 0, 0.6, -0.27);
+  box(chair, 0.07, 0.3, 0.07, chairDark, 0, 0.2, 0);
+  box(chair, 0.62, 0.04, 0.07, chairDark, 0, 0.05, 0);
+  box(chair, 0.07, 0.04, 0.62, chairDark, 0, 0.05, 0);
+  [[0.29, 0], [-0.29, 0], [0, 0.29], [0, -0.29]].forEach(function (p) {
+    box(chair, 0.06, 0.05, 0.06, chairDark, p[0], 0.025, p[1]);
+  });
+
+  // Plant and filing cabinet
+  var plant = new THREE.Group();
+  plant.position.set(-1.95, 0, -1.95);
+  scene.add(plant);
+  var leaf = mat(0x4f8a5b, 0.9), leafDark = mat(0x3e7049, 0.9);
+  box(plant, 0.36, 0.34, 0.36, mat(0xb8643f, 0.8), 0, 0.17, 0);
+  box(plant, 0.3, 0.02, 0.3, mat(0x3a2a20, 1), 0, 0.345, 0);
+  box(plant, 0.14, 0.62, 0.14, leaf, 0, 0.62, 0);
+  box(plant, 0.12, 0.42, 0.12, leafDark, 0.13, 0.55, 0.05).rotation.z = -0.45;
+  box(plant, 0.12, 0.4, 0.12, leaf, -0.13, 0.52, -0.04).rotation.z = 0.5;
+  box(plant, 0.1, 0.34, 0.1, leafDark, 0.02, 0.5, 0.14).rotation.x = 0.55;
+
+  var cab = new THREE.Group();
+  cab.position.set(1.95, 0, -2.05);
+  scene.add(cab);
+  box(cab, 0.55, 0.95, 0.5, mat(0x7d828d, 0.6), 0, 0.475, 0);
+  [0.18, 0.48, 0.78].forEach(function (y) {
+    box(cab, 0.47, 0.26, 0.02, mat(0x8d929d, 0.55), 0, y, 0.255);
+    box(cab, 0.14, 0.03, 0.03, mat(0x2b2d33, 0.5), 0, y + 0.06, 0.27);
+  });
+
+  // The agent
+  var hero = SMEHero.create(THREE);
+  scene.add(hero.root);
+
+  var ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.52, 0.6, 48),
+    new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.25, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.014;
+  scene.add(ring);
+
+  var SPOTS = {
+    work: { x: 0, y: -SMEHero.SEAT_DROP, z: 0.02, ry: 0 },
+    idle: { x: 1.3, y: 0, z: 0.05, ry: 0.6 },
+    thumbs: { x: 1.3, y: 0, z: 0.05, ry: Math.PI / 4 }
+  };
+  var WALK = { cx: 0, cz: 0.3, rx: 1.75, rz: 1.55, speed: 0.5 };
+  var STATE_TEXT = { work: 'typing', idle: 'idle', walk: 'walking', thumbs: 'approved' };
+
+  var chosen = 'work';
+  var shown = 'work';
+  var burstUntil = 0;
+  var walkS = 0;
+  var live = false;
+  var folderOn = true;
+
+  function placeFolder() {
+    var atDesk = shown === 'work';
+    hero.setFolder(folderOn && !atDesk);
+    deskFolder.visible = folderOn && atDesk;
+  }
+
+  hero.root.position.set(SPOTS.work.x, SPOTS.work.y, SPOTS.work.z);
+  hero.setState('work');
+  placeFolder();
+
+  var stateTag = document.getElementById('stateTag');
+  var liveCount = document.getElementById('liveCount');
+
+  function show(state) {
+    if (state === shown) return;
+    if (state === 'walk') {
+      var p = hero.root.position;
+      walkS = Math.atan2((p.x - WALK.cx) / WALK.rx, (p.z - WALK.cz) / WALK.rz);
+    }
+    shown = state;
+    hero.setState(state);
+    stateTag.textContent = STATE_TEXT[state];
+    placeFolder();
+  }
+
+  function choose(state) {
+    chosen = state;
+    burstUntil = 0;
+    document.querySelectorAll('.seg button').forEach(function (b) {
+      b.setAttribute('aria-checked', String(b.dataset.state === state));
+    });
+    show(state);
+  }
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () { choose(b.dataset.state); });
+  });
+
+  function bindToggle(id, fn) {
+    var el = document.getElementById(id);
+    el.addEventListener('click', function () {
+      var on = el.getAttribute('aria-pressed') !== 'true';
+      el.setAttribute('aria-pressed', String(on));
+      fn(on);
+    });
+  }
+  bindToggle('opt-live', function (on) {
+    live = on;
+    liveCount.textContent = on ? '1' : '0';
+    liveCount.className = on ? 'on' : '';
+  });
+  bindToggle('opt-folder', function (on) { folderOn = on; placeFolder(); });
+  bindToggle('opt-spin', function (on) { controls.autoRotate = on; });
+
+  // Tap the robot for a short thumbs up
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+  var downAt = null;
+  function hitHero(ev) {
+    var r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    return raycaster.intersectObjects(hero.meshes, false).length > 0;
+  }
+  renderer.domElement.addEventListener('pointerdown', function (ev) { downAt = { x: ev.clientX, y: ev.clientY }; });
+  renderer.domElement.addEventListener('pointerup', function (ev) {
+    if (!downAt) return;
+    var moved = Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y);
+    downAt = null;
+    if (moved < 6 && hitHero(ev)) {
+      burstUntil = clock.elapsedTime + 2.4;
+      show('thumbs');
+    }
+  });
+  renderer.domElement.addEventListener('pointermove', function (ev) {
+    if (ev.pointerType === 'mouse' && !downAt) stage.classList.toggle('hot', hitHero(ev));
+  });
+
+  // Sizing: keep the agent framed on any screen, and centered beside the panel on wide ones
+  var panel = document.querySelector('.panel');
+  function resize() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    var aspect = w / h;
+    var narrow = w <= 640;
+    var viewH = Math.max(5.2, (narrow ? 5.6 : 7.6) / aspect);
+    var viewW = viewH * aspect;
+    var shiftX = 0, shiftY = 0;
+    if (!narrow) shiftX = ((panel.offsetWidth + 16) / 2 / w) * viewW;
+    else shiftY = ((panel.offsetHeight + 16) / 2 / h) * viewH;
+    camera.left = -viewW / 2 - shiftX;
+    camera.right = viewW / 2 - shiftX;
+    camera.top = viewH / 2 - shiftY;
+    camera.bottom = -viewH / 2 - shiftY;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  // Frame loop
+  var tag = document.getElementById('tag');
+  var headPos = new THREE.Vector3();
+  var clock = new THREE.Clock();
+
+  function wrapAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+  function frame() {
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var t = clock.elapsedTime;
+
+    if (burstUntil && t > burstUntil) { burstUntil = 0; show(chosen); }
+
+    var root = hero.root;
+    var k = 1 - Math.exp(-dt * 5);
+    var tx, ty, tz, tr;
+    if (shown === 'walk') {
+      walkS += dt * WALK.speed;
+      tx = WALK.cx + WALK.rx * Math.sin(walkS);
+      tz = WALK.cz + WALK.rz * Math.cos(walkS);
+      ty = 0;
+      tr = Math.atan2(WALK.rx * Math.cos(walkS), -WALK.rz * Math.sin(walkS));
+      k = 1 - Math.exp(-dt * 8);
+    } else {
+      var s = SPOTS[shown];
+      tx = s.x; ty = s.y; tz = s.z; tr = s.ry;
+    }
+    root.position.x += (tx - root.position.x) * k;
+    root.position.y += (ty - root.position.y) * k;
+    root.position.z += (tz - root.position.z) * k;
+    root.rotation.y += wrapAngle(tr - root.rotation.y) * k;
+
+    hero.update(dt, t);
+
+    ring.position.x = root.position.x;
+    ring.position.z = root.position.z;
+    ring.material.opacity = live ? 0.55 + Math.sin(t * 4) * 0.25 : 0.18;
+    ring.scale.setScalar(live ? 1 + Math.sin(t * 4) * 0.04 : 1);
+
+    var working = shown === 'work';
+    screenTex.offset.y = (screenTex.offset.y + (working ? dt * 0.12 : 0)) % 1;
+    screenMat.color.setScalar(working || live ? 1 : 0.55);
+
+    controls.update();
+    renderer.render(scene, camera);
+
+    hero.joints.head.getWorldPosition(headPos);
+    headPos.y += 0.95;
+    headPos.project(camera);
+    var r = renderer.domElement.getBoundingClientRect();
+    var sx = (headPos.x * 0.5 + 0.5) * r.width + r.left;
+    var sy = (-headPos.y * 0.5 + 0.5) * r.height + r.top;
+    tag.style.transform = 'translate(' + sx.toFixed(1) + 'px,' + sy.toFixed(1) + 'px) translate(-50%,-100%)';
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
