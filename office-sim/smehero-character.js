@@ -159,7 +159,7 @@
     box(torso, 0.035, 0.035, 0.02, M.tie, 0, 0.1, 0.188);
     box(torso, 0.2, 0.1, 0.2, M.neck, 0, 0.64, 0);
 
-    // Head: big rounded silver dome, dark visor, glowing ^ ^ eyes, ear pods.
+    // Head: big rounded silver dome, dark visor, ear pods.
     var head = group(torso, 0, 0.68, 0);
     J.head = head;
     var HW = 0.86, HH = 0.78, HD = 0.8, hy = 0.4;
@@ -176,34 +176,50 @@
     glow.position.set(0, 0.03, 0.017);
     visor.add(glow);
 
+    // Speech-bubble pointer: a stepped tail off the lower edge of the head, on its left (+x) side.
+    [[0.17, 0.42, -0.24], [0.13, 0.51, -0.31], [0.09, 0.58, -0.37], [0.055, 0.635, -0.415]].forEach(function (t) {
+      box(head, t[0], t[0], t[0] * 1.7, M.silver, t[1], hy + t[2], 0.06);
+    });
+
+    // Eyes read "^ |" from the front: a chevron on the viewer's left, a bar on the right.
     var eyes = group(visor, 0, 0.03, 0.02);
     var px = 0.036;
-    var chevron = [[-2, -1], [-1, 0], [0, 1], [1, 0], [2, -1]];
-    [-1, 1].forEach(function (s) {
-      var eye = group(eyes, s * 0.15, 0, 0);
-      chevron.forEach(function (p) {
+    var EYE_SHAPES = {
+      chevron: [[-2, -1], [-1, 0], [0, 1], [1, 0], [2, -1]],
+      bar: [[0, -1], [0, 0], [0, 1]]
+    };
+    [[-0.15, 'chevron'], [0.15, 'bar']].forEach(function (e) {
+      var eye = group(eyes, e[0], 0, 0);
+      EYE_SHAPES[e[1]].forEach(function (p) {
         var m = box(eye, px, px, 0.012, M.eye, p[0] * px, p[1] * px, 0);
         m.castShadow = false;
       });
     });
 
-    // "SMEHero.ai" stamped on the forehead.
+    // "SMEHero.ai" logo on the forehead.
     if (typeof document !== 'undefined') {
       var c = document.createElement('canvas');
-      c.width = 256; c.height = 40;
+      c.width = 512; c.height = 80;
       var ctx = c.getContext('2d');
-      ctx.fillStyle = '#7a8290';
-      ctx.font = '600 26px system-ui, -apple-system, Segoe UI, sans-serif';
-      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('SMEHero.ai', 128, 21);
+      ctx.font = '800 56px system-ui, -apple-system, Segoe UI, sans-serif';
+      var brand = 'SMEHero', tld = '.ai';
+      var bw = ctx.measureText(brand).width;
+      ctx.font = '500 56px system-ui, -apple-system, Segoe UI, sans-serif';
+      var x0 = (512 - bw - ctx.measureText(tld).width) / 2;
+      ctx.font = '800 56px system-ui, -apple-system, Segoe UI, sans-serif';
+      ctx.fillStyle = '#3c4350';
+      ctx.fillText(brand, x0, 42);
+      ctx.font = '500 56px system-ui, -apple-system, Segoe UI, sans-serif';
+      ctx.fillStyle = '#5d6573';
+      ctx.fillText(tld, x0 + bw, 42);
       var tex = new THREE.CanvasTexture(c);
       tex.anisotropy = 4;
       var label = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.3, 0.047),
+        new THREE.PlaneGeometry(0.5, 0.078),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
       );
-      label.position.set(0, hy + 0.26, HD / 2 + 0.003);
+      label.position.set(0, hy + 0.215, HD / 2 + 0.003);
       head.add(label);
     }
 
