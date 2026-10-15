@@ -214,8 +214,15 @@
   var HIP_X = 2.8;      // hip pitch axis, fore/aft of body centre
   var HIP_Y = 4.9;      // hip height when standing
   var LEG_Z = 1.38;     // lateral offset of the leg plane
-  var L1 = 3.4;         // thigh: hip axis to knee axis
-  var L2 = 3.4;         // calf: knee axis to foot centre
+  var L1 = 3.7;         // thigh: hip axis to knee axis
+  // Calf centreline: a straight shin that bends toward the foot. It starts 0.3 above the knee axis
+  // (the rounded knee end) and is rotated so the foot centre lies straight below the knee in leg space.
+  var CALF_PTS = (function () {
+    var raw = [[0, 0.3], [0, 0], [0, -1.0], [0, -1.9], [-0.06, -2.45], [-0.3, -2.92], [-0.586, -3.454]];
+    var f = raw[raw.length - 1], th = -Math.atan2(f[0], -f[1]), c = Math.cos(th), s = Math.sin(th);
+    return raw.map(function (p) { return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; });
+  })();
+  var L2 = -CALF_PTS[CALF_PTS.length - 1][1]; // calf: knee axis to foot centre
   var FOOT_R = 0.28;
 
   /* ---------- Renderer, scene, camera ---------- */
@@ -285,7 +292,7 @@
   var M = {
     shell: std(0xebe9e4, 0.42, 0.0),
     metal: std(0x9c9893, 0.32, 0.85),
-    calf: std(0x8f8a84, 0.42, 0.72),
+    calf: std(0x8c877f, 0.38, 0.62),
     bracket: std(0x5d5a56, 0.5, 0.55),
     rail: std(0x585652, 0.7, 0.2),
     core: std(0x2c2c2e, 0.75, 0.1),
@@ -356,18 +363,19 @@
     return mesh(g, mat);
   }
 
-  // Sweep an elliptical section along a curve in the XY plane; radii(t) returns [in-plane, through-plane].
-  function sweep(points, radii, mat, segs, radial) {
-    segs = segs || 56;
-    radial = radial || 22;
+  // Sweep a superellipse section along a curve in the XY plane.
+  // radii(t, s, len) returns [in-plane, through-plane] half-sizes; s is arc length from the start.
+  function sweep(points, radii, mat, o) {
+    var segs = o.segs, radial = o.radial, e = 2 / o.n;
     var curve = new T.CatmullRomCurve3(points.map(function (p) { return new T.Vector3(p[0], p[1], 0); }));
-    var pos = [], idx = [];
+    var len = curve.getLength(), pos = [], idx = [];
+    function sp(v) { return Math.sign(v) * Math.pow(Math.abs(v), e); }
     for (var i = 0; i <= segs; i++) {
-      var t = i / segs, c = curve.getPointAt(t), tg = curve.getTangentAt(t), rr = radii(t);
+      var t = i / segs, c = curve.getPointAt(t), tg = curve.getTangentAt(t), rr = radii(t, t * len, len);
       var nx = -tg.y, ny = tg.x;
       for (var j = 0; j < radial; j++) {
-        var ph = (j / radial) * TAU;
-        pos.push(c.x + nx * rr[0] * Math.cos(ph), c.y + ny * rr[0] * Math.cos(ph), rr[1] * Math.sin(ph));
+        var ph = (j / radial) * TAU, cx = sp(Math.cos(ph)) * rr[0];
+        pos.push(c.x + nx * cx, c.y + ny * cx, sp(Math.sin(ph)) * rr[1]);
       }
     }
     for (i = 0; i < segs; i++) {
@@ -473,32 +481,32 @@
     g.stroke();
   });
 
-  var sideTex = canvasTex(1024, 548, function (g, w, h) {
+  var sideTex = canvasTex(1024, 716, function (g, w, h) {
     g.fillStyle = '#ffffff';
     g.fillRect(0, 0, w, h);
     g.fillStyle = '#b8b6b1';
-    [250, 430, 600, 780].forEach(function (x) { g.beginPath(); g.arc(x, 44, 5, 0, TAU); g.fill(); });
-    var px = 512 - 330, py = 220, pw = 660, ph = 270;
+    [300, 500, 700, 880].forEach(function (x) { g.beginPath(); g.arc(x, 46, 5, 0, TAU); g.fill(); });
+    var cx0 = 610, px = cx0 - 300, py = 420, pw = 600, ph = 250;
     g.fillStyle = '#dcdad5';
     rrect(g, px, py, pw, ph, 26); g.fill();
     g.strokeStyle = '#c3c1bb'; g.lineWidth = 8;
     rrect(g, px + 4, py + 4, pw - 8, ph - 8, 22); g.stroke();
     g.strokeStyle = '#f2f1ee'; g.lineWidth = 3;
     g.beginPath(); g.moveTo(px + 26, py + ph - 2); g.lineTo(px + pw - 26, py + ph - 2); g.stroke();
-    [512 - 210, 512 + 210].forEach(function (cx) {
+    [cx0 - 190, cx0 + 190].forEach(function (cx) {
       g.fillStyle = '#f4f3f0';
-      rrect(g, cx - 58, py + 72, 116, 128, 14); g.fill();
+      rrect(g, cx - 56, py + 64, 112, 124, 14); g.fill();
       g.strokeStyle = '#bebcb6'; g.lineWidth = 4;
-      rrect(g, cx - 58, py + 72, 116, 128, 14); g.stroke();
-      var pit = g.createLinearGradient(0, py + 92, 0, py + 180);
+      rrect(g, cx - 56, py + 64, 112, 124, 14); g.stroke();
+      var pit = g.createLinearGradient(0, py + 84, 0, py + 170);
       pit.addColorStop(0, '#2a2a2b'); pit.addColorStop(1, '#4a4947');
       g.fillStyle = pit;
-      rrect(g, cx - 34, py + 94, 68, 84, 8); g.fill();
+      rrect(g, cx - 33, py + 86, 66, 80, 8); g.fill();
     });
     g.strokeStyle = '#8e8c87'; g.lineWidth = 8;
-    g.beginPath(); g.arc(512, py + 118, 34, 0, TAU); g.stroke();
+    g.beginPath(); g.arc(cx0, py + 108, 32, 0, TAU); g.stroke();
     g.fillStyle = '#8e8c87';
-    [-45, -15, 15, 45].forEach(function (dx) { g.beginPath(); g.arc(512 + dx, py + 192, 5.5, 0, TAU); g.fill(); });
+    [-45, -15, 15, 45].forEach(function (dx) { g.beginPath(); g.arc(cx0 + dx, py + 180, 5.5, 0, TAU); g.fill(); });
   });
 
   var tableTex = canvasTex(1024, 1024, function (g, w) {
@@ -553,20 +561,34 @@
   robot.add(pivot);
   scene.add(robot);
 
-  // Top shell: chamfered rear, flat deck, tapering neck that rises toward the head.
+  // Main block: one piece from deck to belly, full-height flat sides.
   content.add(loft([
-    { x: -3.72, wt: 0.6, wb: 0.6, y0: 5.69, y1: 6.02, r: 0.12 },
-    { x: -3.64, wt: 0.72, wb: 0.72, y0: 5.66, y1: 6.08, r: 0.15 },
-    { x: -3.3, wt: 1.05, wb: 1.05, y0: 5.65, y1: 6.1, r: 0.16 },
-    { x: 0.5, wt: 1.05, wb: 1.05, y0: 5.65, y1: 6.1, r: 0.16 },
-    { x: 1.3, wt: 0.84, wb: 0.8, y0: 5.73, y1: 6.2, r: 0.18 },
-    { x: 2.2, wt: 0.67, wb: 0.64, y0: 5.8, y1: 6.32, r: 0.18 },
-    { x: 2.6, wt: 0.67, wb: 0.64, y0: 5.82, y1: 6.34, r: 0.18 }
+    { x: -2.42, wt: 1.0, wb: 1.0, y0: 3.9, y1: 6.06, r: 0.13 },
+    { x: -2.36, wt: 1.05, wb: 1.05, y0: 3.85, y1: 6.1, r: 0.16 },
+    { x: 0.6, wt: 1.05, wb: 1.05, y0: 3.85, y1: 6.1, r: 0.16 },
+    { x: 0.66, wt: 1.0, wb: 1.0, y0: 3.9, y1: 6.06, r: 0.13 }
+  ], M.shell));
+
+  // Rear deck: shallower, with chamfered corners, leaving the rear hip actuators exposed beneath.
+  content.add(loft([
+    { x: -3.74, wt: 0.58, wb: 0.58, y0: 5.32, y1: 6.02, r: 0.12 },
+    { x: -3.66, wt: 0.7, wb: 0.7, y0: 5.28, y1: 6.08, r: 0.15 },
+    { x: -3.3, wt: 1.05, wb: 1.05, y0: 5.25, y1: 6.1, r: 0.16 },
+    { x: -2.3, wt: 1.05, wb: 1.05, y0: 5.25, y1: 6.1, r: 0.16 }
+  ], M.shell));
+
+  // Neck: a thick tapering waist that rises into the head; the front hip actuators sit underneath.
+  content.add(loft([
+    { x: 0.5, wt: 1.05, wb: 1.05, y0: 5.25, y1: 6.1, r: 0.16 },
+    { x: 1.0, wt: 0.94, wb: 0.92, y0: 5.36, y1: 6.16, r: 0.18 },
+    { x: 1.6, wt: 0.76, wb: 0.72, y0: 5.44, y1: 6.24, r: 0.2 },
+    { x: 2.2, wt: 0.68, wb: 0.64, y0: 5.46, y1: 6.32, r: 0.2 },
+    { x: 2.6, wt: 0.7, wb: 0.64, y0: 5.4, y1: 6.36, r: 0.2 }
   ], M.shell));
 
   // Head: sensor module with a trapezoid face.
   content.add(loft([
-    { x: 2.45, wt: 0.66, wb: 0.6, y0: 5.5, y1: 6.36, r: 0.2 },
+    { x: 2.45, wt: 0.7, wb: 0.62, y0: 5.4, y1: 6.38, r: 0.2 },
     { x: 2.75, wt: 0.8, wb: 0.7, y0: 5.22, y1: 6.42, r: 0.22 },
     { x: 3.5, wt: 0.82, wb: 0.72, y0: 5.18, y1: 6.42, r: 0.22 },
     { x: 3.62, wt: 0.8, wb: 0.7, y0: 5.21, y1: 6.39, r: 0.2 },
@@ -582,16 +604,16 @@
   visor.position.set(3.687, 5.8, 0);
   content.add(visor);
 
-  // Main battery/electronics box with side panels.
-  content.add(loft([
-    { x: -2.45, wt: 0.97, wb: 0.97, y0: 3.9, y1: 5.68, r: 0.1 },
-    { x: -2.4, wt: 1.0, wb: 1.0, y0: 3.85, y1: 5.7, r: 0.12 },
-    { x: 0.6, wt: 1.0, wb: 1.0, y0: 3.85, y1: 5.7, r: 0.12 },
-    { x: 0.65, wt: 0.97, wb: 0.97, y0: 3.9, y1: 5.68, r: 0.1 }
-  ], M.shell));
+  // Side decals: the port panel sits low and toward the front on both sides.
+  var sideTexR = sideTex.clone();
+  sideTexR.needsUpdate = true;
+  sideTexR.wrapS = T.RepeatWrapping;
+  sideTexR.repeat.x = -1;
+  sideTexR.offset.x = 1;
   [1, -1].forEach(function (side) {
-    var p = new T.Mesh(new T.PlaneGeometry(2.9, 1.55), new T.MeshStandardMaterial({ map: sideTex, color: M.shell.color, roughness: 0.45 }));
-    p.position.set(-0.9, 4.775, side * 1.004);
+    var p = new T.Mesh(new T.PlaneGeometry(2.86, 2.0),
+      new T.MeshStandardMaterial({ map: side > 0 ? sideTex : sideTexR, color: M.shell.color, roughness: 0.45 }));
+    p.position.set(-0.87, 4.975, side * 1.054);
     if (side < 0) p.rotation.y = Math.PI;
     p.receiveShadow = true;
     content.add(p);
@@ -607,34 +629,71 @@
   });
 
   // Exposed front and rear bays.
-  boxAt(1.8, 1.8, 0.62, 1.5, 4.8, 0, M.core, content);
-  boxAt(1.05, 1.75, 0.62, -2.9, 4.78, 0, M.core, content);
+  boxAt(1.8, 1.6, 0.62, 1.5, 4.7, 0, M.core, content);
+  boxAt(1.05, 1.4, 0.62, -2.9, 4.6, 0, M.core, content);
   // Head yoke (front) and rear frame.
   [0.24, -0.24].forEach(function (z) {
-    boxAt(0.2, 1.5, 0.14, 2.55, 4.95, z, M.bracket, content);
-    boxAt(0.16, 1.45, 0.14, -3.5, 4.93, z, M.bracket, content);
+    boxAt(0.2, 1.4, 0.14, 2.55, 4.9, z, M.bracket, content);
+    boxAt(0.16, 1.3, 0.14, -3.5, 4.85, z, M.bracket, content);
   });
   boxAt(0.2, 0.18, 0.62, 2.55, 4.25, 0, M.bracket, content);
   boxAt(0.16, 0.18, 0.62, -3.5, 4.25, 0, M.bracket, content);
-  boxAt(0.5, 0.12, 0.62, 2.55, 5.68, 0, M.bracket, content);
+  boxAt(0.5, 0.12, 0.62, 2.55, 5.5, 0, M.bracket, content);
 
   /* ---------- Hips and legs ---------- */
   var legs = [];
-  var thighGeo = (function () {
-    var R = 0.54, r = 0.32, s = (R - r) / L1, c = Math.sqrt(1 - s * s), as = Math.asin(s);
-    var sh = new T.Shape();
-    sh.moveTo(R * c, -R * s);
-    sh.lineTo(r * c, -L1 - r * s);
-    sh.absarc(0, -L1, r, -as, -Math.PI + as, true);
-    sh.lineTo(-R * c, -R * s);
-    sh.absarc(0, 0, R, Math.PI + as, -as, true);
-    return new T.ExtrudeGeometry(sh, { depth: 0.22, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 5, curveSegments: 32 });
+
+  // Thigh: a thick, slightly bowed shell, broad over the hip actuator and narrowing to a rounded knee.
+  var THIGH_TOP = 0.5, THIGH_END = 0.34;
+  function thighW(y) { return 0.33 + 0.25 * Math.exp(-Math.max(0, -y) / 0.9); }
+  function thighD(y) { return 0.19 + 0.05 * Math.exp(-Math.max(0, -y) / 1.2); }
+  function domes(s, len, e0, e1) {
+    var k = 1;
+    if (s < e0) k = Math.sqrt(Math.max(0.0004, 1 - Math.pow((e0 - s) / e0, 2)));
+    if (s > len - e1) k = Math.sqrt(Math.max(0.0004, 1 - Math.pow((s - (len - e1)) / e1, 2)));
+    return k;
+  }
+  var THIGH_PTS = [[0, THIGH_TOP], [0, 0], [-0.07, -1.2], [-0.09, -2.3], [-0.04, -3.2], [0, -L1], [0, -L1 - THIGH_END]];
+  function thighMesh() {
+    return sweep(THIGH_PTS, function (t, s, len) {
+      var y = THIGH_TOP - s, k = domes(s, len, THIGH_TOP, THIGH_END);
+      return [thighW(y) * k, thighD(y) * k];
+    }, M.shell, { segs: 72, radial: 32, n: 3 });
+  }
+  // Point on the thigh's outer face, for screws and the knee axle cap.
+  function thighFace(xFrac, y, side) {
+    var a = thighW(y), b = thighD(y), n = 3;
+    return new T.Vector3(xFrac * a, y, side * (LEG_Z + b * Math.pow(1 - Math.pow(Math.abs(xFrac), n), 1 / n)));
+  }
+
+  // Calf: machined shin, widest at the knee, with a bend toward the foot.
+  function calfMesh() {
+    return sweep(CALF_PTS, function (t, s, len) {
+      var k = domes(s, len, 0.3, 0.001);
+      var u = Math.max(0, s - 0.3) / (len - 0.3);
+      var w = u < 0.6 ? 0.3 - u * 0.16 : 0.204 - (u - 0.6) * 0.1;
+      var d = 0.14 - u * 0.035;
+      return [w * k, d * k];
+    }, M.calf, { segs: 72, radial: 28, n: 2.6 });
+  }
+  var footDir = (function () {
+    var a = CALF_PTS[CALF_PTS.length - 2], b = CALF_PTS[CALF_PTS.length - 1];
+    var v = new T.Vector2(b[0] - a[0], b[1] - a[1]).normalize();
+    return Math.atan2(v.x, -v.y);
   })();
-  var calfPts = [[0, 0], [0.08, -0.85], [0.2, -1.75], [0.27, -2.5], [0.19, -3.05], [0, -L2]];
+  // Rubber boot over the end of the shin.
+  var footGeo = new T.LatheGeometry([[0, -0.28], [0.12, -0.27], [0.21, -0.22], [0.265, -0.12], [0.28, 0], [0.27, 0.22],
+    [0.235, 0.4], [0.19, 0.48], [0, 0.48]].map(function (q) { return new T.Vector2(q[0], q[1]); }), 36);
+  // Lattice linkage on the inside of the knee.
   var linkGeo = (function () {
     var sh = new T.Shape();
-    sh.moveTo(-0.3, 0.12); sh.lineTo(0.3, 0.12); sh.lineTo(0.24, -0.78); sh.lineTo(-0.04, -0.78); sh.closePath();
-    return new T.ExtrudeGeometry(sh, { depth: 0.14, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 });
+    sh.moveTo(0.06, 0.3); sh.lineTo(0.46, 0.02); sh.lineTo(0.32, -0.82); sh.lineTo(0.1, -0.88); sh.lineTo(-0.02, -0.3); sh.closePath();
+    var h1 = new T.Path();
+    h1.moveTo(0.14, 0.08); h1.lineTo(0.31, -0.02); h1.lineTo(0.19, -0.36); h1.closePath();
+    var h2 = new T.Path();
+    h2.moveTo(0.13, -0.46); h2.lineTo(0.26, -0.46); h2.lineTo(0.18, -0.72); h2.closePath();
+    sh.holes.push(h1, h2);
+    return new T.ExtrudeGeometry(sh, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
   })();
 
   function cable(points, parent) {
@@ -656,12 +715,14 @@
     cap.position.y = rollLen;
     roll.add(cap);
     content.add(roll);
-    cable([
-      new T.Vector3(front ? 0.7 : -2.2, 5.3, side * 0.35),
-      new T.Vector3(front ? 1.3 : -2.5, 5.75, side * 0.6),
-      new T.Vector3(hx - dir * 0.6, 5.7, side * 0.85),
-      new T.Vector3(hx - dir * 0.2, 5.38, side * 0.98)
-    ], content);
+    if (front) {
+      cable([
+        new T.Vector3(0.66, 5.05, side * 0.95),
+        new T.Vector3(1.3, 5.5, side * 1.0),
+        new T.Vector3(2.0, 5.5, side * 1.05),
+        new T.Vector3(2.35, 5.2, side * 1.0)
+      ], content);
+    }
 
     // Yoke from roll actuator to the hip pitch actuator.
     boxAt(0.78, 0.92, 0.3, hx + dir * 0.05, HIP_Y, side * 0.86, M.bracket, content);
@@ -676,40 +737,34 @@
 
     var thigh = new T.Group();
     hip.add(thigh);
-    var shell = mesh(thighGeo, M.shell);
-    shell.position.z = side * LEG_Z - 0.11;
+    var shell = thighMesh();
+    shell.position.z = side * LEG_Z;
     thigh.add(shell);
-    [[0.36, -0.3], [0.29, -1.25], [0.21, -2.25], [0.14, -3.1]].forEach(function (p) {
-      var s = mesh(new T.CylinderGeometry(0.04, 0.04, 0.02, 12), M.screw);
+    [[0.66, -0.35], [0.66, -1.2], [0.66, -2.1], [0.66, -2.95]].forEach(function (p) {
+      var s = mesh(new T.CylinderGeometry(0.038, 0.038, 0.03, 12), M.screw);
       s.rotation.x = Math.PI / 2;
-      s.position.set(p[0], p[1], side * (LEG_Z + 0.185));
+      s.position.copy(thighFace(p[0], p[1], side));
       thigh.add(s);
     });
-    var hub = mesh(new T.CylinderGeometry(0.27, 0.27, 0.34, 28), M.bracket);
-    hub.rotation.x = Math.PI / 2;
-    hub.position.set(0, -L1, side * LEG_Z);
-    thigh.add(hub);
+    var axle = mesh(new T.CylinderGeometry(0.13, 0.13, 0.04, 24), M.bracket);
+    axle.rotation.x = Math.PI / 2;
+    axle.position.copy(thighFace(0, -L1, side));
+    thigh.add(axle);
 
     var knee = new T.Group();
     knee.position.y = -L1;
     thigh.add(knee);
-    var calf = sweep(calfPts, function (t) {
-      var w = t < 0.75 ? 0.27 - t * 0.12 : 0.18 - (t - 0.75) * 0.08;
-      var d = 0.15 - t * 0.04;
-      return [w, d];
-    }, M.calf);
-    calf.position.z = side * (LEG_Z - 0.04);
+    var calfZ = side * (LEG_Z - 0.08);
+    var calf = calfMesh();
+    calf.position.z = calfZ;
     knee.add(calf);
     var link = mesh(linkGeo, M.bracket);
-    link.position.z = side * (LEG_Z - 0.04) - 0.07;
+    link.position.z = calfZ - 0.05;
     knee.add(link);
-    var foot = mesh(new T.SphereGeometry(FOOT_R, 28, 18), M.rubber);
-    foot.scale.set(1.05, 1.2, 0.95);
-    foot.position.set(0, -L2 + 0.04, side * (LEG_Z - 0.04));
+    var foot = mesh(footGeo, M.rubber);
+    foot.position.set(0, -L2, calfZ);
+    foot.rotation.z = footDir;
     knee.add(foot);
-    var collar = mesh(new T.CylinderGeometry(0.2, 0.25, 0.12, 24), M.rubber);
-    collar.position.set(0.03, -L2 + 0.32, side * (LEG_Z - 0.04));
-    knee.add(collar);
 
     legs.push({
       front: front, side: side, thigh: thigh, knee: knee,

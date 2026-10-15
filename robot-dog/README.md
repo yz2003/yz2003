@@ -10,8 +10,8 @@ Open `index.html` in a browser. It loads Three.js and OrbitControls from a CDN.
 
 ## How it is built
 
-- Body shells (deck, neck, head, battery box) are lofts through rounded-trapezoid sections.
+- Body shells (main block, chamfered rear deck, tapering neck, head) are lofts through rounded-trapezoid sections.
 - Actuators are lathed cylinders: a hip roll motor along the body and a hip pitch motor across it at each corner.
-- Thighs are extruded and bevelled shells. Calves are tapered sweeps that end in rubber feet.
+- Thighs are thick, slightly bowed sweeps that are broad over the hip and round at the knee. Calves are machined-looking sweeps with a bend toward the foot, a lattice linkage at the knee and a rubber boot at the end.
 - Each leg is driven by two-link inverse kinematics with the knees bending backward, so the poses only set body height, pitch and foot positions.
 - The visor, side port panel and turntable are drawn on canvas textures.
